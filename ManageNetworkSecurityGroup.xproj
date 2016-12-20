@@ -7,7 +7,7 @@
 
   <Import Project="$(VSToolsPath)\DotNet\Microsoft.DotNet.Props" Condition="'$(VSToolsPath)' != ''" />
   <PropertyGroup Label="Globals">
-    <ProjectGuid>702fa72c-d92e-4990-ba4a-9a5893e888db</ProjectGuid>
+    <ProjectGuid>a75e2e24-ff89-4b19-bf52-dd28e5d24550</ProjectGuid>
     <RootNamespace>ManageNetworkSecurityGroup</RootNamespace>
     <BaseIntermediateOutputPath Condition="'$(BaseIntermediateOutputPath)'=='' ">.\obj</BaseIntermediateOutputPath>
     <OutputPath Condition="'$(OutputPath)'=='' ">.\bin\</OutputPath>
