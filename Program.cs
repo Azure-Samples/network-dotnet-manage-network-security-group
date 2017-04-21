@@ -5,8 +5,8 @@ using Microsoft.Azure.Management.Compute.Fluent;
 using Microsoft.Azure.Management.Compute.Fluent.Models;
 using Microsoft.Azure.Management.Fluent;
 using Microsoft.Azure.Management.Network.Fluent.Models;
-using Microsoft.Azure.Management.Resource.Fluent;
-using Microsoft.Azure.Management.Resource.Fluent.Core;
+using Microsoft.Azure.Management.ResourceManager.Fluent;
+using Microsoft.Azure.Management.ResourceManager.Fluent.Core;
 using Microsoft.Azure.Management.Samples.Common;
 using System;
 
@@ -35,7 +35,7 @@ namespace ManageNetworkSecurityGroup
             string vnetName = SdkContext.RandomResourceName("vnet", 24);
             string networkInterfaceName1 = SdkContext.RandomResourceName("nic1", 24);
             string networkInterfaceName2 = SdkContext.RandomResourceName("nic2", 24);
-            string publicIpAddressLeafDNS1 = SdkContext.RandomResourceName("pip1", 24);
+            string publicIPAddressLeafDNS1 = SdkContext.RandomResourceName("pip1", 24);
             string frontEndVMName = SdkContext.RandomResourceName("fevm", 24);
             string backEndVMName = SdkContext.RandomResourceName("bevm", 24);
 
@@ -146,9 +146,9 @@ namespace ManageNetworkSecurityGroup
                         .WithExistingResourceGroup(rgName)
                         .WithExistingPrimaryNetwork(network)
                         .WithSubnet("Front-end")
-                        .WithPrimaryPrivateIpAddressDynamic()
-                        .WithNewPrimaryPublicIpAddress(publicIpAddressLeafDNS1)
-                        .WithIpForwarding()
+                        .WithPrimaryPrivateIPAddressDynamic()
+                        .WithNewPrimaryPublicIPAddress(publicIPAddressLeafDNS1)
+                        .WithIPForwarding()
                         .WithExistingNetworkSecurityGroup(frontEndNSG)
                         .Create();
 
@@ -167,7 +167,7 @@ namespace ManageNetworkSecurityGroup
                         .WithExistingResourceGroup(rgName)
                         .WithExistingPrimaryNetwork(network)
                         .WithSubnet("Back-end")
-                        .WithPrimaryPrivateIpAddressDynamic()
+                        .WithPrimaryPrivateIPAddressDynamic()
                         .WithExistingNetworkSecurityGroup(backEndNSG)
                         .Create();
 
@@ -226,7 +226,7 @@ namespace ManageNetworkSecurityGroup
                 // List network security groups
 
                 Utilities.Log("Walking through network security groups");
-                var networkSecurityGroups = azure.NetworkSecurityGroups.ListByGroup(rgName);
+                var networkSecurityGroups = azure.NetworkSecurityGroups.ListByResourceGroup(rgName);
 
                 foreach (var networkSecurityGroup in networkSecurityGroups)
                 {
@@ -282,7 +282,7 @@ namespace ManageNetworkSecurityGroup
                 var credentials = SdkContext.AzureCredentialsFactory.FromFile(Environment.GetEnvironmentVariable("AZURE_AUTH_LOCATION"));
 
                 var azure = Azure.Configure()
-                    .WithLogLevel(HttpLoggingDelegatingHandler.Level.BASIC)
+                    .WithLogLevel(HttpLoggingDelegatingHandler.Level.Basic)
                     .Authenticate(credentials)
                     .WithDefaultSubscription();
 
