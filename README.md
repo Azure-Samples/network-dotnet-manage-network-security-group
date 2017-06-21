@@ -4,7 +4,7 @@ platforms: .Net
 author: selvasingh
 ---
 
-#Getting Started with Network - Manage Network Security Group - in .Net #
+# Getting Started with Network - Manage Network Security Group - in .Net #
 
           Azure Network sample for managing network security groups -
            - Create a network security group for the front end of a subnet
