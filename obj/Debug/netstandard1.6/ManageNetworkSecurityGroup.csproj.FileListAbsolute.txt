@@ -1,0 +1,2 @@
+C:\Sources\dotnet-samples\network-dotnet-manage-network-security-group\bin\Debug\netstandard1.6\ManageNetworkSecurityGroup.deps.json
+C:\Sources\dotnet-samples\network-dotnet-manage-network-security-group\obj\Debug\netstandard1.6\ManageNetworkSecurityGroup.csproj.CoreCompileInputs.cache

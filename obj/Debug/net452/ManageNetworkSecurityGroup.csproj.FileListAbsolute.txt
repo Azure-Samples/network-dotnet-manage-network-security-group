@@ -1,0 +1,4 @@
+C:\Sources\dotnet-samples\network-dotnet-manage-network-security-group\bin\Debug\net452\ManageNetworkSecurityGroup.runtimeconfig.json
+C:\Sources\dotnet-samples\network-dotnet-manage-network-security-group\bin\Debug\net452\ManageNetworkSecurityGroup.runtimeconfig.dev.json
+C:\Sources\dotnet-samples\network-dotnet-manage-network-security-group\obj\Debug\net452\ManageNetworkSecurityGroup.csproj.ManageNetworkSecurityGroup.exe.config
+C:\Sources\dotnet-samples\network-dotnet-manage-network-security-group\obj\Debug\net452\ManageNetworkSecurityGroup.csproj.CoreCompileInputs.cache
