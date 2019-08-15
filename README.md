@@ -4,20 +4,20 @@ languages:
 - csharp
 products:
 - azure
-services: virtual-network
-platforms: dotnet
-author: yaohaizh
+extensions:
+- services: virtual-network
+- platforms: dotnet
 ---
 
 # Getting started on managing network security groups in C# #
 
-          Azure Network sample for managing network security groups -
-           - Create a network security group for the front end of a subnet
-           - Create a network security group for the back end of a subnet
-           - Create Linux virtual machines for the front end and back end
-           -- Apply network security groups
-           - List network security groups
-           - Update a network security group.
+ Azure Network sample for managing network security groups -
+  - Create a network security group for the front end of a subnet
+  - Create a network security group for the back end of a subnet
+  - Create Linux virtual machines for the front end and back end
+  -- Apply network security groups
+  - List network security groups
+  - Update a network security group.
 
 
 ## Running this Sample ##
