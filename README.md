@@ -7,9 +7,10 @@ products:
 extensions:
 - services: virtual-network
 - platforms: dotnet
+description: "Azure Network sample for managing network security groups."
 ---
 
-# Getting started on managing network security groups in C# #
+# Getting started on managing network security groups in C#
 
  Azure Network sample for managing network security groups -
   - Create a network security group for the front end of a subnet
