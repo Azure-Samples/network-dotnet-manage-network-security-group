@@ -1,22 +1,25 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License. See License.txt in the project root for license information.
 
-using Microsoft.Azure.Management.Compute.Fluent;
-using Microsoft.Azure.Management.Compute.Fluent.Models;
-using Microsoft.Azure.Management.Fluent;
-using Microsoft.Azure.Management.Network.Fluent.Models;
-using Microsoft.Azure.Management.ResourceManager.Fluent;
-using Microsoft.Azure.Management.ResourceManager.Fluent.Core;
-using Microsoft.Azure.Management.Samples.Common;
-using System;
+using Azure;
+using Azure.Core;
+using Azure.Identity;
+using Azure.ResourceManager.Resources.Models;
+using Azure.ResourceManager.Samples.Common;
+using Azure.ResourceManager.Resources;
+using Azure.ResourceManager;
+using Azure.ResourceManager.Network;
+using Azure.ResourceManager.Network.Models;
+using Azure.ResourceManager.Compute;
+using Azure.ResourceManager.Compute.Models;
+
 
 namespace ManageNetworkSecurityGroup
 {
 
     public class Program
     {
-        private static readonly string UserName = Utilities.CreateUsername();
-        private static readonly string SshKey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCfSPC2K7LZcFKEO+/t3dzmQYtrJFZNxOsbVgOVKietqHyvmYGHEC0J2wPdAqQ/63g/hhAEFRoyehM+rbeDri4txB3YFfnOK58jqdkyXzupWqXzOrlKY4Wz9SKjjN765+dqUITjKRIaAip1Ri137szRg71WnrmdP3SphTRlCx1Bk2nXqWPsclbRDCiZeF8QOTi4JqbmJyK5+0UqhqYRduun8ylAwKKQJ1NJt85sYIHn9f1Rfr6Tq2zS0wZ7DHbZL+zB5rSlAr8QyUdg/GQD+cmSs6LvPJKL78d6hMGk84ARtFo4A79ovwX/Fj01znDQkU6nJildfkaolH2rWFG/qttD azjava@javalib.Com";
+        private static ResourceIdentifier? _resourceGroupId = null;
 
         /**
          * Azure Network sample for managing network security groups -
@@ -27,20 +30,31 @@ namespace ManageNetworkSecurityGroup
          *  - List network security groups
          *  - Update a network security group.
          */
-        public static void RunSample(IAzure azure)
+        public static async Task RunSample(ArmClient client)
         {
-            string frontEndNSGName = SdkContext.RandomResourceName("fensg", 24);
-            string backEndNSGName = SdkContext.RandomResourceName("bensg", 24);
-            string rgName = SdkContext.RandomResourceName("rgNEMS", 24);
-            string vnetName = SdkContext.RandomResourceName("vnet", 24);
-            string networkInterfaceName1 = SdkContext.RandomResourceName("nic1", 24);
-            string networkInterfaceName2 = SdkContext.RandomResourceName("nic2", 24);
-            string publicIPAddressLeafDNS1 = SdkContext.RandomResourceName("pip1", 24);
-            string frontEndVMName = SdkContext.RandomResourceName("fevm", 24);
-            string backEndVMName = SdkContext.RandomResourceName("bevm", 24);
+            string frontEndNSGName = Utilities.CreateRandomName("fensg");
+            string backEndNSGName = Utilities.CreateRandomName("bensg");
+            string vnetName = Utilities.CreateRandomName("vnet");
+            string networkInterfaceName1 = Utilities.CreateRandomName("nic1");
+            string networkInterfaceName2 = Utilities.CreateRandomName("nic2");
+            string publicIPAddressLeafDNS1 = Utilities.CreateRandomName("pip1");
+            string frontEndVMName = Utilities.CreateRandomName("fevm");
+            string backEndVMName = Utilities.CreateRandomName("bevm");
 
             try
             {
+                // Get default subscription
+                SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
+
+                // Create a resource group in the EastUS region
+                string rgName = Utilities.CreateRandomName("NetworkSampleRG");
+                Utilities.Log($"Creating resource group...");
+                ArmOperation<ResourceGroupResource> rgLro = await subscription.GetResourceGroups().CreateOrUpdateAsync(WaitUntil.Completed, rgName, new ResourceGroupData(AzureLocation.EastUS));
+                ResourceGroupResource resourceGroup = rgLro.Value;
+                _resourceGroupId = resourceGroup.Id;
+                Utilities.Log("Created a resource group with name: " + resourceGroup.Data.Name);
+
+
                 // Define a virtual network for VMs in this availability set
 
                 Utilities.Log("Creating a virtual network ...");
@@ -258,9 +272,12 @@ namespace ManageNetworkSecurityGroup
             {
                 try
                 {
-                    Utilities.Log("Deleting Resource Group: " + rgName);
-                    azure.ResourceGroups.DeleteByName(rgName);
-                    Utilities.Log("Deleted Resource Group: " + rgName);
+                    if (_resourceGroupId is not null)
+                    {
+                        Utilities.Log($"Deleting Resource Group...");
+                        await client.GetResourceGroupResource(_resourceGroupId).DeleteAsync(WaitUntil.Completed);
+                        Utilities.Log($"Deleted Resource Group: {_resourceGroupId.Name}");
+                    }
                 }
                 catch (NullReferenceException)
                 {
@@ -273,23 +290,20 @@ namespace ManageNetworkSecurityGroup
             }
         }
 
-        public static void Main(string[] args)
+        public static async Task Main(string[] args)
         {
             try
             {
                 //=================================================================
                 // Authenticate
-                var credentials = SdkContext.AzureCredentialsFactory.FromFile(Environment.GetEnvironmentVariable("AZURE_AUTH_LOCATION"));
+                var clientId = Environment.GetEnvironmentVariable("CLIENT_ID");
+                var clientSecret = Environment.GetEnvironmentVariable("CLIENT_SECRET");
+                var tenantId = Environment.GetEnvironmentVariable("TENANT_ID");
+                var subscription = Environment.GetEnvironmentVariable("SUBSCRIPTION_ID");
+                ClientSecretCredential credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+                ArmClient client = new ArmClient(credential, subscription);
 
-                var azure = Azure.Configure()
-                    .WithLogLevel(HttpLoggingDelegatingHandler.Level.Basic)
-                    .Authenticate(credentials)
-                    .WithDefaultSubscription();
-
-                // Print selected subscription
-                Utilities.Log("Selected subscription: " + azure.SubscriptionId);
-
-                RunSample(azure);
+                await RunSample(client);
             }
             catch (Exception ex)
             {
