@@ -106,5 +106,14 @@ namespace Azure.ResourceManager.Samples.Common
                 },
                 NetworkProfile = new VirtualMachineNetworkProfile() { }
             };
+
+        public static void PrintNetworkSecurityGroup(NetworkSecurityGroupResource nsg)
+        {
+            Log($"List all security rules under {nsg.Data.Name}:");
+            foreach (var rule in nsg.Data.SecurityRules)
+            {
+                Log(rule.Name);
+            }
+        }
     }
 }
