@@ -1,22 +1,26 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License. See License.txt in the project root for license information.
 
-using Microsoft.Azure.Management.Compute.Fluent;
-using Microsoft.Azure.Management.Compute.Fluent.Models;
-using Microsoft.Azure.Management.Fluent;
-using Microsoft.Azure.Management.Network.Fluent.Models;
-using Microsoft.Azure.Management.ResourceManager.Fluent;
-using Microsoft.Azure.Management.ResourceManager.Fluent.Core;
-using Microsoft.Azure.Management.Samples.Common;
-using System;
+using Azure;
+using Azure.Core;
+using Azure.Identity;
+using Azure.ResourceManager.Resources.Models;
+using Azure.ResourceManager.Samples.Common;
+using Azure.ResourceManager.Resources;
+using Azure.ResourceManager;
+using Azure.ResourceManager.Network;
+using Azure.ResourceManager.Network.Models;
+using Azure.ResourceManager.Compute;
+using Azure.ResourceManager.Compute.Models;
+using System.Xml.Linq;
+
 
 namespace ManageNetworkSecurityGroup
 {
 
     public class Program
     {
-        private static readonly string UserName = Utilities.CreateUsername();
-        private static readonly string SshKey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCfSPC2K7LZcFKEO+/t3dzmQYtrJFZNxOsbVgOVKietqHyvmYGHEC0J2wPdAqQ/63g/hhAEFRoyehM+rbeDri4txB3YFfnOK58jqdkyXzupWqXzOrlKY4Wz9SKjjN765+dqUITjKRIaAip1Ri137szRg71WnrmdP3SphTRlCx1Bk2nXqWPsclbRDCiZeF8QOTi4JqbmJyK5+0UqhqYRduun8ylAwKKQJ1NJt85sYIHn9f1Rfr6Tq2zS0wZ7DHbZL+zB5rSlAr8QyUdg/GQD+cmSs6LvPJKL78d6hMGk84ARtFo4A79ovwX/Fj01znDQkU6nJildfkaolH2rWFG/qttD azjava@javalib.Com";
+        private static ResourceIdentifier? _resourceGroupId = null;
 
         /**
          * Azure Network sample for managing network security groups -
@@ -27,38 +31,46 @@ namespace ManageNetworkSecurityGroup
          *  - List network security groups
          *  - Update a network security group.
          */
-        public static void RunSample(IAzure azure)
+        public static async Task RunSample(ArmClient client)
         {
-            string frontEndNSGName = SdkContext.RandomResourceName("fensg", 24);
-            string backEndNSGName = SdkContext.RandomResourceName("bensg", 24);
-            string rgName = SdkContext.RandomResourceName("rgNEMS", 24);
-            string vnetName = SdkContext.RandomResourceName("vnet", 24);
-            string networkInterfaceName1 = SdkContext.RandomResourceName("nic1", 24);
-            string networkInterfaceName2 = SdkContext.RandomResourceName("nic2", 24);
-            string publicIPAddressLeafDNS1 = SdkContext.RandomResourceName("pip1", 24);
-            string frontEndVMName = SdkContext.RandomResourceName("fevm", 24);
-            string backEndVMName = SdkContext.RandomResourceName("bevm", 24);
+            string frontEndNSGName = Utilities.CreateRandomName("fensg");
+            string backEndNSGName = Utilities.CreateRandomName("bensg");
+            string vnetName = Utilities.CreateRandomName("vnet");
+            string nicName1 = Utilities.CreateRandomName("nic1");
+            string nicName2 = Utilities.CreateRandomName("nic2");
+            string publicIPAddressLeafDNS1 = Utilities.CreateRandomName("pip1");
+            string frontEndVmName = Utilities.CreateRandomName("fevm");
+            string backEndVmName = Utilities.CreateRandomName("bevm");
 
             try
             {
+                // Get default subscription
+                SubscriptionResource subscription = await client.GetDefaultSubscriptionAsync();
+
+                // Create a resource group in the EastUS region
+                string rgName = Utilities.CreateRandomName("NetworkSampleRG");
+                Utilities.Log($"Creating resource group...");
+                ArmOperation<ResourceGroupResource> rgLro = await subscription.GetResourceGroups().CreateOrUpdateAsync(WaitUntil.Completed, rgName, new ResourceGroupData(AzureLocation.EastUS));
+                ResourceGroupResource resourceGroup = rgLro.Value;
+                _resourceGroupId = resourceGroup.Id;
+                Utilities.Log("Created a resource group with name: " + resourceGroup.Data.Name);
+
                 // Define a virtual network for VMs in this availability set
 
                 Utilities.Log("Creating a virtual network ...");
-
-                var network = azure.Networks.Define(vnetName)
-                        .WithRegion(Region.USEast)
-                        .WithNewResourceGroup(rgName)
-                        .WithAddressSpace("172.16.0.0/16")
-                        .DefineSubnet("Front-end")
-                            .WithAddressPrefix("172.16.1.0/24")
-                            .Attach()
-                        .DefineSubnet("Back-end")
-                            .WithAddressPrefix("172.16.2.0/24")
-                            .Attach()
-                        .Create();
-
-                Utilities.Log("Created a virtual network: " + network.Id);
-                Utilities.PrintVirtualNetwork(network);
+                VirtualNetworkData vnetInput = new VirtualNetworkData()
+                {
+                    Location = resourceGroup.Data.Location,
+                    AddressPrefixes = { "172.16.0.0/16" },
+                    Subnets =
+                    {
+                        new SubnetData() { Name = "Front-end", AddressPrefix = "172.16.1.0/24" },
+                        new SubnetData() { Name = "Back-end", AddressPrefix = "172.16.2.0/24" },
+                    },
+                };
+                var vnetLro = await resourceGroup.GetVirtualNetworks().CreateOrUpdateAsync(WaitUntil.Completed, vnetName, vnetInput);
+                VirtualNetworkResource vnet = vnetLro.Value;
+                Utilities.Log($"Created a virtual network: {vnet.Data.Name}");
 
                 //============================================================
                 // Create a network security group for the front end of a subnet
@@ -67,33 +79,43 @@ namespace ManageNetworkSecurityGroup
                 // - ALLOW-WEB- allows HTTP traffic into the front end subnet
 
                 Utilities.Log("Creating a security group for the front end - allows SSH and HTTP");
-                var frontEndNSG = azure.NetworkSecurityGroups.Define(frontEndNSGName)
-                        .WithRegion(Region.USEast)
-                        .WithNewResourceGroup(rgName)
-                        .DefineRule("ALLOW-SSH")
-                            .AllowInbound()
-                            .FromAnyAddress()
-                            .FromAnyPort()
-                            .ToAnyAddress()
-                            .ToPort(22)
-                            .WithProtocol(SecurityRuleProtocol.Tcp)
-                            .WithPriority(100)
-                            .WithDescription("Allow SSH")
-                            .Attach()
-                        .DefineRule("ALLOW-HTTP")
-                            .AllowInbound()
-                            .FromAnyAddress()
-                            .FromAnyPort()
-                            .ToAnyAddress()
-                            .ToPort(80)
-                            .WithProtocol(SecurityRuleProtocol.Tcp)
-                            .WithPriority(101)
-                            .WithDescription("Allow HTTP")
-                            .Attach()
-                        .Create();
-
-                Utilities.Log("Created a security group for the front end: " + frontEndNSG.Id);
-                Utilities.PrintNetworkSecurityGroup(frontEndNSG);
+                NetworkSecurityGroupData frontEndNsgInput = new NetworkSecurityGroupData()
+                {
+                    Location = resourceGroup.Data.Location,
+                    SecurityRules =
+                    {
+                        new SecurityRuleData()
+                        {
+                            Name = "ALLOW-SSH",
+                            Description = "Allow SSH",
+                            Access = SecurityRuleAccess.Allow,
+                            Direction = SecurityRuleDirection.Inbound,
+                            SourceAddressPrefix = "*",
+                            SourcePortRange = "*",
+                            DestinationAddressPrefix = "*",
+                            DestinationPortRange = "22",
+                            Priority = 100,
+                            Protocol = SecurityRuleProtocol.Tcp,
+                        },
+                        new SecurityRuleData()
+                        {
+                            Name = "ALLOW-HTTP",
+                            Description = "Allow HTTP",
+                            Access = SecurityRuleAccess.Allow,
+                            Direction = SecurityRuleDirection.Inbound,
+                            SourceAddressPrefix = "*",
+                            SourcePortRange = "*",
+                            DestinationAddressPrefix = "*",
+                            DestinationPortRange = "80",
+                            Priority = 101,
+                            Protocol = SecurityRuleProtocol.Tcp,
+                        }
+                    }
+                };
+                var frontEndNsgLro = await resourceGroup.GetNetworkSecurityGroups().CreateOrUpdateAsync(WaitUntil.Completed, frontEndNSGName, frontEndNsgInput);
+                NetworkSecurityGroupResource frontEndNsg = frontEndNsgLro.Value;
+                Utilities.Log("Created a security group for the front end: " + frontEndNsg.Data.Name);
+                Utilities.PrintNetworkSecurityGroup(frontEndNsg);
 
                 //============================================================
                 // Create a network security group for the back end of a subnet
@@ -104,57 +126,84 @@ namespace ManageNetworkSecurityGroup
                 Utilities.Log("Creating a security group for the front end - allows SSH and "
                         + "denies all outbound internet traffic  ");
 
-                var backEndNSG = azure.NetworkSecurityGroups.Define(backEndNSGName)
-                        .WithRegion(Region.USEast)
-                        .WithExistingResourceGroup(rgName)
-                        .DefineRule("ALLOW-SQL")
-                            .AllowInbound()
-                            .FromAddress("172.16.1.0/24")
-                            .FromAnyPort()
-                            .ToAnyAddress()
-                            .ToPort(1433)
-                            .WithProtocol(SecurityRuleProtocol.Tcp)
-                            .WithPriority(100)
-                            .WithDescription("Allow SQL")
-                            .Attach()
-                        .DefineRule("DENY-WEB")
-                            .DenyOutbound()
-                            .FromAnyAddress()
-                            .FromAnyPort()
-                            .ToAnyAddress()
-                            .ToAnyPort()
-                            .WithAnyProtocol()
-                            .WithDescription("Deny Web")
-                            .WithPriority(200)
-                            .Attach()
-                        .Create();
-
-                Utilities.Log("Created a security group for the back end: " + backEndNSG.Id);
-                Utilities.PrintNetworkSecurityGroup(backEndNSG);
-
-                Utilities.Log("Creating multiple network interfaces");
-                Utilities.Log("Creating network interface 1");
+                NetworkSecurityGroupData backEndNsgInput = new NetworkSecurityGroupData()
+                {
+                    Location = resourceGroup.Data.Location,
+                    SecurityRules =
+                    {
+                        new SecurityRuleData()
+                        {
+                            Name = "ALLOW-SQL",
+                            Description = "Allow SQL",
+                            Access = SecurityRuleAccess.Allow,
+                            Direction = SecurityRuleDirection.Inbound,
+                            SourceAddressPrefix = "172.16.1.0/24",
+                            SourcePortRange = "*",
+                            DestinationAddressPrefix = "*",
+                            DestinationPortRange = "1433",
+                            Priority = 100,
+                            Protocol = SecurityRuleProtocol.Tcp,
+                        },
+                        new SecurityRuleData()
+                        {
+                            Name = "DENY-WEB",
+                            Description = "Deny Web",
+                            Access = SecurityRuleAccess.Deny,
+                            Direction = SecurityRuleDirection.Outbound,
+                            SourceAddressPrefix = "*",
+                            SourcePortRange = "*",
+                            DestinationAddressPrefix = "*",
+                            DestinationPortRange = "*",
+                            Priority = 200,
+                            Protocol = SecurityRuleProtocol.Asterisk,
+                        }
+                    }
+                };
+                var backEndNsgLro = await resourceGroup.GetNetworkSecurityGroups().CreateOrUpdateAsync(WaitUntil.Completed, backEndNSGName, backEndNsgInput);
+                NetworkSecurityGroupResource backEndNsg = backEndNsgLro.Value;
+                Utilities.Log("Created a security group for the back end: " + backEndNsg.Data.Name);
+                Utilities.PrintNetworkSecurityGroup(backEndNsg);
 
                 //========================================================
                 // Create a network interface and apply the
                 // front end network security group
 
+                Utilities.Log("Creating multiple network interfaces");
                 Utilities.Log("Creating a network interface for the front end");
 
-                var networkInterface1 = azure.NetworkInterfaces.Define(networkInterfaceName1)
-                        .WithRegion(Region.USEast)
-                        .WithExistingResourceGroup(rgName)
-                        .WithExistingPrimaryNetwork(network)
-                        .WithSubnet("Front-end")
-                        .WithPrimaryPrivateIPAddressDynamic()
-                        .WithNewPrimaryPublicIPAddress(publicIPAddressLeafDNS1)
-                        .WithIPForwarding()
-                        .WithExistingNetworkSecurityGroup(frontEndNSG)
-                        .Create();
+                // To create a NIC, an existing IP address is required.
+                Utilities.Log("Created two public ip...");
+                PublicIPAddressResource pip1 = await Utilities.CreatePublicIP(resourceGroup, publicIPAddressLeafDNS1);
+                Utilities.Log($"Created public ip: {pip1.Data.Name}");
 
-                Utilities.Log("Created network interface for the front end");
-
-                Utilities.PrintNetworkInterface(networkInterface1);
+                var nicInput1 = new NetworkInterfaceData()
+                {
+                    Location = resourceGroup.Data.Location,
+                    EnableIPForwarding = true,
+                    IPConfigurations =
+                    {
+                        new NetworkInterfaceIPConfigurationData()
+                        {
+                            Name = "default-config",
+                            PrivateIPAllocationMethod = NetworkIPAllocationMethod.Dynamic,
+                            Subnet = new SubnetData()
+                            {
+                                Id = vnet.Data.Subnets.First(item => item.Name == "Front-end").Id
+                            },
+                            PublicIPAddress = new PublicIPAddressData
+                            {
+                                Id = pip1.Id,
+                            }
+                        }
+                    },
+                    NetworkSecurityGroup = new NetworkSecurityGroupData()
+                    {
+                        Id = frontEndNsg.Data.Id
+                    }
+                };
+                var networkInterfaceLro1 = await resourceGroup.GetNetworkInterfaces().CreateOrUpdateAsync(WaitUntil.Completed, nicName1, nicInput1);
+                NetworkInterfaceResource nic1 = networkInterfaceLro1.Value;
+                Utilities.Log($"Created network interface for the front end: {nic1.Data.Name}");
 
                 //========================================================
                 // Create a network interface and apply the
@@ -162,41 +211,47 @@ namespace ManageNetworkSecurityGroup
 
                 Utilities.Log("Creating a network interface for the back end");
 
-                var networkInterface2 = azure.NetworkInterfaces.Define(networkInterfaceName2)
-                        .WithRegion(Region.USEast)
-                        .WithExistingResourceGroup(rgName)
-                        .WithExistingPrimaryNetwork(network)
-                        .WithSubnet("Back-end")
-                        .WithPrimaryPrivateIPAddressDynamic()
-                        .WithExistingNetworkSecurityGroup(backEndNSG)
-                        .Create();
-
-                Utilities.PrintNetworkInterface(networkInterface2);
+                var nicInput2 = new NetworkInterfaceData()
+                {
+                    Location = resourceGroup.Data.Location,
+                    IPConfigurations =
+                    {
+                        new NetworkInterfaceIPConfigurationData()
+                        {
+                            Name = "default-config",
+                            PrivateIPAllocationMethod = NetworkIPAllocationMethod.Dynamic,
+                            Subnet = new SubnetData()
+                            {
+                                Id = vnet.Data.Subnets.First(item => item.Name == "Back-end").Id
+                            }
+                        }
+                    },
+                    NetworkSecurityGroup = new NetworkSecurityGroupData()
+                    {
+                        Id = backEndNsg.Data.Id
+                    }
+                };
+                var networkInterfaceLro2 = await resourceGroup.GetNetworkInterfaces().CreateOrUpdateAsync(WaitUntil.Completed, nicName2, nicInput2);
+                NetworkInterfaceResource nic2 = networkInterfaceLro2.Value;
+                Utilities.Log($"Created network interface 2: {nic2.Data.Name}");
 
                 //=============================================================
                 // Create a virtual machine (for the front end)
                 // with the network interface that has the network security group for the front end
 
-                Utilities.Log("Creating a Linux virtual machine (for the front end) - "
+                Utilities.Log("Creating a virtual machine (for the front end) - "
                         + "with the network interface that has the network security group for the front end");
 
-                var t1 = DateTime.UtcNow;
-
-                var frontEndVM = azure.VirtualMachines.Define(frontEndVMName)
-                        .WithRegion(Region.USEast)
-                        .WithExistingResourceGroup(rgName)
-                        .WithExistingPrimaryNetworkInterface(networkInterface1)
-                        .WithPopularLinuxImage(KnownLinuxVirtualMachineImage.UbuntuServer16_04_Lts)
-                        .WithRootUsername(UserName)
-                        .WithSsh(SshKey)
-                        .WithSize(VirtualMachineSizeTypes.Parse("Standard_D2a_v4"))
-                        .Create();
-
-                var t2 = DateTime.UtcNow;
-                Utilities.Log("Created Linux VM: (took "
-                        + (t2 - t1).TotalSeconds + " seconds) " + frontEndVM.Id);
-                // Print virtual machine details
-                Utilities.PrintVirtualMachine(frontEndVM);
+                VirtualMachineData frontEndVmInput = Utilities.GetDefaultVMInputData(resourceGroup, frontEndVmName);
+                frontEndVmInput.NetworkProfile.NetworkInterfaces.Add(
+                    new VirtualMachineNetworkInterfaceReference()
+                    {
+                        Id = nic1.Id,
+                        Primary = true
+                    });
+                var frontEndVmLro = await resourceGroup.GetVirtualMachines().CreateOrUpdateAsync(WaitUntil.Completed, frontEndVmName, frontEndVmInput);
+                VirtualMachineResource frontendfrontEndVm = frontEndVmLro.Value;
+                Utilities.Log("Created frontEndVm: " + frontendfrontEndVm.Data.Name);
 
                 //=============================================================
                 // Create a virtual machine (for the back end)
@@ -205,32 +260,25 @@ namespace ManageNetworkSecurityGroup
                 Utilities.Log("Creating a Linux virtual machine (for the back end) - "
                         + "with the network interface that has the network security group for the back end");
 
-                t1 = DateTime.UtcNow;
-
-                var backEndVM = azure.VirtualMachines.Define(backEndVMName)
-                        .WithRegion(Region.USEast)
-                        .WithExistingResourceGroup(rgName)
-                        .WithExistingPrimaryNetworkInterface(networkInterface2)
-                        .WithPopularLinuxImage(KnownLinuxVirtualMachineImage.UbuntuServer16_04_Lts)
-                        .WithRootUsername(UserName)
-                        .WithSsh(SshKey)
-                        .WithSize(VirtualMachineSizeTypes.Parse("Standard_D2a_v4"))
-                        .Create();
-
-                t2 = DateTime.UtcNow;
-                Utilities.Log("Created a Linux VM: (took "
-                        + (t2 - t1).TotalSeconds + " seconds) " + backEndVM.Id);
-                Utilities.PrintVirtualMachine(backEndVM);
+                VirtualMachineData backEndVmInput = Utilities.GetDefaultVMInputData(resourceGroup, backEndVmName);
+                backEndVmInput.NetworkProfile.NetworkInterfaces.Add(
+                    new VirtualMachineNetworkInterfaceReference()
+                    {
+                        Id = nic2.Id,
+                        Primary = true
+                    });
+                var backEndVmLro = await resourceGroup.GetVirtualMachines().CreateOrUpdateAsync(WaitUntil.Completed, backEndVmName, backEndVmInput);
+                VirtualMachineResource frontendbackEndVm = backEndVmLro.Value;
+                Utilities.Log("Created backEndVm: " + frontendbackEndVm.Data.Name);
 
                 //========================================================
                 // List network security groups
 
                 Utilities.Log("Walking through network security groups");
-                var networkSecurityGroups = azure.NetworkSecurityGroups.ListByResourceGroup(rgName);
 
-                foreach (var networkSecurityGroup in networkSecurityGroups)
+                await foreach (var networkSecurityGroup in resourceGroup.GetNetworkSecurityGroups().GetAllAsync())
                 {
-                    Utilities.PrintNetworkSecurityGroup(networkSecurityGroup);
+                    Utilities.Log(networkSecurityGroup.Data.Name);
                 }
 
                 //========================================================
@@ -238,29 +286,36 @@ namespace ManageNetworkSecurityGroup
 
                 Utilities.Log("Updating the front end network security group to allow FTP");
 
-                frontEndNSG.Update()
-                    .DefineRule("ALLOW-FTP")
-                            .AllowInbound()
-                            .FromAnyAddress()
-                            .FromAnyPort()
-                            .ToAnyAddress()
-                            .ToPortRange(20, 21)
-                            .WithProtocol(SecurityRuleProtocol.Tcp)
-                            .WithDescription("Allow FTP")
-                            .WithPriority(200)
-                            .Attach()
-                        .Apply();
-
+                frontEndNsgInput = frontEndNsg.Data;
+                frontEndNsgInput.SecurityRules.Add(
+                    new SecurityRuleData()
+                    {
+                        Name = "ALLOW-FTP",
+                        Description = "Allow FTP",
+                        Access = SecurityRuleAccess.Allow,
+                        Direction = SecurityRuleDirection.Inbound,
+                        SourceAddressPrefix = "*",
+                        SourcePortRange = "*",
+                        DestinationAddressPrefix = "*",
+                        DestinationPortRange = "20-21",
+                        Priority = 200,
+                        Protocol = SecurityRuleProtocol.Tcp,
+                    });
+                frontEndNsgLro = await resourceGroup.GetNetworkSecurityGroups().CreateOrUpdateAsync(WaitUntil.Completed, frontEndNSGName, frontEndNsgInput);
+                frontEndNsg = frontEndNsgLro.Value;
                 Utilities.Log("Updated the front end network security group");
-                Utilities.PrintNetworkSecurityGroup(frontEndNSG);
+                Utilities.PrintNetworkSecurityGroup(frontEndNsg);
             }
             finally
             {
                 try
                 {
-                    Utilities.Log("Deleting Resource Group: " + rgName);
-                    azure.ResourceGroups.DeleteByName(rgName);
-                    Utilities.Log("Deleted Resource Group: " + rgName);
+                    if (_resourceGroupId is not null)
+                    {
+                        Utilities.Log($"Deleting Resource Group...");
+                        await client.GetResourceGroupResource(_resourceGroupId).DeleteAsync(WaitUntil.Completed);
+                        Utilities.Log($"Deleted Resource Group: {_resourceGroupId.Name}");
+                    }
                 }
                 catch (NullReferenceException)
                 {
@@ -273,23 +328,20 @@ namespace ManageNetworkSecurityGroup
             }
         }
 
-        public static void Main(string[] args)
+        public static async Task Main(string[] args)
         {
             try
             {
                 //=================================================================
                 // Authenticate
-                var credentials = SdkContext.AzureCredentialsFactory.FromFile(Environment.GetEnvironmentVariable("AZURE_AUTH_LOCATION"));
+                var clientId = Environment.GetEnvironmentVariable("CLIENT_ID");
+                var clientSecret = Environment.GetEnvironmentVariable("CLIENT_SECRET");
+                var tenantId = Environment.GetEnvironmentVariable("TENANT_ID");
+                var subscription = Environment.GetEnvironmentVariable("SUBSCRIPTION_ID");
+                ClientSecretCredential credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+                ArmClient client = new ArmClient(credential, subscription);
 
-                var azure = Azure.Configure()
-                    .WithLogLevel(HttpLoggingDelegatingHandler.Level.Basic)
-                    .Authenticate(credentials)
-                    .WithDefaultSubscription();
-
-                // Print selected subscription
-                Utilities.Log("Selected subscription: " + azure.SubscriptionId);
-
-                RunSample(azure);
+                await RunSample(client);
             }
             catch (Exception ex)
             {
