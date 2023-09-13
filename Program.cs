@@ -297,7 +297,7 @@ namespace ManageNetworkSecurityGroup
                         SourceAddressPrefix = "*",
                         SourcePortRange = "*",
                         DestinationAddressPrefix = "*",
-                        DestinationPortRange = "20,21",
+                        DestinationPortRange = "20-21",
                         Priority = 200,
                         Protocol = SecurityRuleProtocol.Tcp,
                     });
